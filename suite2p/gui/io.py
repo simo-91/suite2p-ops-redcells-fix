@@ -18,10 +18,8 @@ def make_masks_and_enable_buttons(parent):
     parent.ops_plot['view'] = 0
     parent.colors['cols'] = 0
     parent.colors['istat'] = 0
-    try:
+    if parent.checkBoxN.isChecked():
         parent.roi_text(False)
-    except:
-        0
     parent.roi_text_labels=[]
     parent.roitext = False 
     parent.checkBoxN.setChecked(False)
@@ -66,12 +64,11 @@ def make_masks_and_enable_buttons(parent):
         parent.stat[n]["inmerge"] = 0
     # enable buttons
     enable_views_and_classifier(parent)
-
     # make views
     views.init_views(parent)
     # make color arrays for various views
     masks.make_colors(parent)
-
+    
     if parent.iscell.sum() > 0:
         ich = np.nonzero(parent.iscell)[0][0]
     else:
@@ -86,9 +83,9 @@ def make_masks_and_enable_buttons(parent):
     masks.plot_colorbar(parent)
     tic = time.time()
     masks.init_masks(parent)
-    print(time.time() - tic)
     M = masks.draw_masks(parent)
     masks.plot_masks(parent, M)
+    print(f'time to draw and plot masks: {time.time() - tic : .4f} sec')
     parent.lcell1.setText("%d" % (ncells - parent.iscell.sum()))
     parent.lcell0.setText("%d" % (parent.iscell.sum()))
     graphics.init_range(parent)
@@ -283,8 +280,6 @@ def load_files(name):
             redcell = np.load(basename + "/redcell.npy")
             probredcell = redcell[:,1].copy()
             redcell = redcell[:,0].astype('bool')
-            F_chan2 = np.load(basename + "/F_chan2.npy")
-            Fneu_chan2 = np.load(basename + "/Fneu_chan2.npy")
             hasred = True
         except (ValueError, OSError, RuntimeError, TypeError, NameError):
             print("no channel 2 labels found (redcell.npy)")
@@ -293,14 +288,12 @@ def load_files(name):
                 NN = Fcell.shape[0]
                 redcell = np.zeros((NN,), 'bool')
                 probredcell = np.zeros((NN,), np.float32)
-                F_chan2 = []
-                Fneu_chan2 = []
     else:
         print("incorrect file, not a stat.npy")
         return None
 
     if goodfolder:
-        return stat, ops, Fcell, Fneu, Spks, iscell, probcell, redcell, probredcell, hasred, F_chan2, Fneu_chan2
+        return stat, ops, Fcell, Fneu, Spks, iscell, probcell, redcell, probredcell, hasred
     else:
         print("stat.npy found, but other files not in folder")
         return None
@@ -318,7 +311,7 @@ def load_proc(parent):
         load_again(parent, Text)
 
 def load_to_GUI(parent, basename, procs):
-    stat, ops, Fcell, Fneu, Spks, iscell, probcell, redcell, probredcell, hasred, F_chan2, Fneu_chan2 = procs
+    stat, ops, Fcell, Fneu, Spks, iscell, probcell, redcell, probredcell, hasred = procs
     parent.basename = basename
     parent.stat = stat
     parent.ops = ops
@@ -330,8 +323,6 @@ def load_to_GUI(parent, basename, procs):
     parent.redcell = redcell.astype('bool')
     parent.probredcell = probredcell
     parent.hasred = hasred
-    parent.F_chan2 = F_chan2
-    parent.Fneu_chan2 = Fneu_chan2
     parent.notmerged = np.ones_like(parent.iscell).astype('bool')
     for n in range(len(parent.stat)):
         if parent.hasred:
@@ -395,6 +386,14 @@ def load_behavior(parent):
     else:
         print("ERROR: this is not a 1D array with length of data")
 
+def resample_frames(y, x, xt):
+    ''' resample y (defined at x) at times xt '''
+    ts = x.size / xt.size
+    y = gaussian_filter1d(y, np.ceil(ts/2), axis=0)
+    f = interp1d(x,y,fill_value="extrapolate")
+    yt = f(xt)
+    return yt
+
 def save_redcell(parent):
     np.save(os.path.join(parent.basename, 'redcell.npy'),
             np.concatenate((np.expand_dims(parent.redcell[parent.notmerged],axis=1),
@@ -419,30 +418,17 @@ def save_mat(parent):
     matpath = os.path.join(parent.basename,'Fall.mat')
     if 'date_proc' in parent.ops:
         parent.ops['date_proc'] = []
-    if parent.hasred:
-        scipy.io.savemat(matpath, {'stat': parent.stat,
-                             'ops': parent.ops,
-                             'F': parent.Fcell,
-                             'Fneu': parent.Fneu,
-                             'F_chan2': parent.F_chan2,
-                             'Fneu_chan2': parent.Fneu_chan2,
-                             'spks': parent.Spks,
-                             'iscell': np.concatenate((parent.iscell[:,np.newaxis],
-                                                       parent.probcell[:,np.newaxis]), axis=1),
-                             'redcell': np.concatenate((np.expand_dims(parent.redcell,axis=1),
-                             np.expand_dims(parent.probredcell,axis=1)), axis=1)
-                             })
-    else:
-        scipy.io.savemat(matpath, {'stat': parent.stat,
-                             'ops': parent.ops,
-                             'F': parent.Fcell,
-                             'Fneu': parent.Fneu,
-                             'spks': parent.Spks,
-                             'iscell': np.concatenate((parent.iscell[:,np.newaxis],
-                                                       parent.probcell[:,np.newaxis]), axis=1),
-                             'redcell': np.concatenate((np.expand_dims(parent.redcell,axis=1),
-                             np.expand_dims(parent.probredcell,axis=1)), axis=1)
-                             })
+    scipy.io.savemat(matpath, {'stat': parent.stat,
+                         'ops': parent.ops,
+                         'F': parent.Fcell,
+                         'Fneu': parent.Fneu,
+                         'spks': parent.Spks,
+                         'iscell': np.concatenate((parent.iscell[:,np.newaxis],
+                                                   parent.probcell[:,np.newaxis]), axis=1),
+                         'redcell': np.concatenate((np.expand_dims(parent.redcell,axis=1),
+                         np.expand_dims(parent.probredcell,axis=1)), axis=1)
+                         })
+
 def save_merge(parent):
     print('saving to NPY')
     np.save(os.path.join(parent.basename, 'ops.npy'), parent.ops)
@@ -472,11 +458,14 @@ def load_custom_mask(parent):
         mask = np.load(name)
         mask = mask.flatten()
         if mask.size == parent.Fcell.shape[0]:
-            parent.cloaded = True
+            b = len(parent.color_names)-1
+            parent.colorbtns.button(b).setEnabled(True)
+            parent.colorbtns.button(b).setStyleSheet(parent.styleUnpressed)
+            cloaded = True
     except (ValueError, KeyError, OSError,
             RuntimeError, TypeError, NameError):
         print("ERROR: this is not a 1D array with length of data")
-    if parent.cloaded:
+    if cloaded:
         parent.custom_mask = mask
         masks.custom_masks(parent)
         M = masks.draw_masks(parent)

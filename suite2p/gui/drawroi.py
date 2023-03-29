@@ -22,17 +22,14 @@ def masks_and_traces(ops, stat_manual, stat_orig):
         returns: F (ROIs x time), Fneu (ROIs x time), F_chan2, Fneu_chan2, ops, stat
         F_chan2 and Fneu_chan2 will be empty if no second channel
     '''
-    if 'aspect' in ops:
-        dy, dx = int(ops['aspect'] * 10), 10
-    else:
-        d0 = ops['diameter']
-        dy, dx = (d0, d0) if isinstance(d0, int) else d0
+
     t0 = time.time()
     # Concatenate stat so a good neuropil function can be formed
     stat_all = stat_manual.copy()
     for n in range(len(stat_orig)):
         stat_all.append(stat_orig[n])
-    stat_all = roi_stats(stat_all, dy, dx, ops['Ly'], ops['Lx'])
+    
+    stat_all = roi_stats(stat_all, ops['Ly'], ops['Lx'], aspect=ops.get('aspect', None), diameter=ops['diameter'])
     cell_masks = [
         masks.create_cell_mask(stat, Ly=ops['Ly'], Lx=ops['Lx'], allow_overlap=ops['allow_overlap']) for stat in stat_all
     ]
@@ -48,9 +45,9 @@ def masks_and_traces(ops, stat_manual, stat_orig):
     )
     print('Masks made in %0.2f sec.' % (time.time() - t0))
 
-    F, Fneu, F_chan2, Fneu_chan2, ops = extract_traces_from_masks(ops, 
-                                                                  manual_cell_masks, 
-                                                                  manual_neuropil_masks)
+    F, Fneu, F_chan2, Fneu_chan2 = extract_traces_from_masks(ops, 
+                                                             manual_cell_masks, 
+                                                             manual_neuropil_masks)
 
     # compute activity statistics for classifier
     npix = np.array([stat_orig[n]['npix'] for n in range(len(stat_orig))]).astype('float32')
@@ -127,7 +124,7 @@ class ROIDraw(QMainWindow):
         self.styleInactive = ("QPushButton {Text-align: left; "
                               "background-color: rgb(50,50,50); "
                               "color:gray;}")
-        
+
         # self.p0 = pg.ViewBox(lockAspect=False,name='plot1',border=[100,100,100],invertY=True)
         self.win = pg.GraphicsLayoutWidget()
         # --- cells image
@@ -207,18 +204,18 @@ class ROIDraw(QMainWindow):
             self.viewbtns.addButton(btn, b)
             self.l0.addWidget(btn, b, 4, 1, 1)
             btn.setEnabled(True)
-            
+
             # check for second channel
             if b == 4:
                 if "meanImg_chan2_corrected" not in parent.ops:
                     btn.setEnabled(False)
                     btn.setStyleSheet(parent.styleInactive)  
-            
+
             if b == 5:
                 if "meanImg_chan2" not in parent.ops:
                     btn.setEnabled(False)
                     btn.setStyleSheet(parent.styleInactive)
-                
+
             b += 1
         b = 0
         self.viewbtns.button(b).setChecked(True)
@@ -326,21 +323,22 @@ class ROIDraw(QMainWindow):
                 if 'max_proj' in self.parent.ops:
                     mimg[self.parent.ops['yrange'][0]:self.parent.ops['yrange'][1],
                         self.parent.ops['xrange'][0]:self.parent.ops['xrange'][1]] = self.parent.ops['max_proj']
-
+                    
+            
             elif i == 4:
                 mimg = np.zeros((self.Ly, self.Lx), np.float32)
                 if 'meanImg_chan2_corrected' in self.parent.ops:
                     mimg[self.parent.ops['yrange'][0]:self.parent.ops['yrange'][1],
                         self.parent.ops['xrange'][0]:self.parent.ops['xrange'][1]] = self.parent.ops['meanImg_chan2_corrected'][self.parent.ops['yrange'][0]:self.parent.ops['yrange'][1],
                                                                                                                                 self.parent.ops['xrange'][0]:self.parent.ops['xrange'][1]]
-                    
+
             elif i == 5:
                 mimg = np.zeros((self.Ly, self.Lx), np.float32)
                 if 'meanImg_chan2' in self.parent.ops:
                     mimg[self.parent.ops['yrange'][0]:self.parent.ops['yrange'][1],
                         self.parent.ops['xrange'][0]:self.parent.ops['xrange'][1]] = self.parent.ops['meanImg_chan2'][self.parent.ops['yrange'][0]:self.parent.ops['yrange'][1],
                                                                                                                       self.parent.ops['xrange'][0]:self.parent.ops['xrange'][1]]
-                    
+
             mimg1 = np.percentile(mimg, 1)
             mimg99 = np.percentile(mimg, 99)
             mimg = (mimg - mimg1) / (mimg99 - mimg1)
@@ -398,7 +396,7 @@ class ROIDraw(QMainWindow):
             elif event.key() == QtCore.Qt.Key_U:
                 if "meanImg_chan2" in self.ops:
                     self.viewbtns.button(5).setChecked(True)
-                    self.viewbtns.button(5).press(self, 5)      
+                    self.viewbtns.button(5).press(self, 5)          
 
     def add_ROI(self, pos=None):
         self.iROI = len(self.ROIs)
